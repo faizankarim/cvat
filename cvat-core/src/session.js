@@ -9,6 +9,7 @@
 
 (() => {
     const PluginRegistry = require('./plugins');
+    const loggerStorage = require('./logger-storage');
     const serverProxy = require('./server-proxy');
     const { getFrame, getPreview } = require('./frames');
     const { ArgumentError } = require('./exceptions');
@@ -125,16 +126,11 @@
                 },
                 writable: true,
             }),
-            logs: Object.freeze({
+            logger: Object.freeze({
                 value: {
-                    async put(logType, details) {
+                    async put(logType, wait, payload = {}) {
                         const result = await PluginRegistry
-                            .apiWrapper.call(this, prototype.logs.put, logType, details);
-                        return result;
-                    },
-                    async save(onUpdate) {
-                        const result = await PluginRegistry
-                            .apiWrapper.call(this, prototype.logs.save, onUpdate);
+                            .apiWrapper.call(this, prototype.logger.put, logType, wait, payload);
                         return result;
                     },
                 },
@@ -436,32 +432,23 @@
 
             /**
                 * Namespace is used for an interaction with logs
-                * @namespace logs
+                * @namespace logger
                 * @memberof Session
             */
 
             /**
                 * Append log to a log collection.
-                * Continue logs will have been added after "close" method is called
+                * Durable logs will have been added after "close" method is called for them
                 * @method put
-                * @memberof Session.logs
-                * @param {module:API.cvat.enums.LogType} type a type of a log
-                * @param {boolean} continuous log is a continuous log
-                * @param {Object} details any others data which will be append to log data
+                * @memberof Session.logger
+                * @param {module:API.cvat.enums.LogType} type - log type
+                * @param {boolean} wait - specifies if log is durable
+                * @param {Object} [payload] - any other data that will be appended to the log
                 * @returns {module:API.cvat.classes.Log}
                 * @instance
                 * @async
                 * @throws {module:API.cvat.exceptions.PluginError}
                 * @throws {module:API.cvat.exceptions.ArgumentError}
-            */
-            /**
-                * Save accumulated logs on a server
-                * @method save
-                * @memberof Session.logs
-                * @throws {module:API.cvat.exceptions.PluginError}
-                * @throws {module:API.cvat.exceptions.ServerError}
-                * @instance
-                * @async
             */
 
             /**
@@ -1452,6 +1439,10 @@
         return result;
     };
 
+    Job.prototype.logger.put.implementation = function (logType, wait, payload) {
+        return this.task.logger.put.implementation(logType, wait, { ...payload, job_id: this.id });
+    };
+
     Task.prototype.save.implementation = async function saveTaskImplementation(onUpdate) {
         // TODO: Add ability to change an owner and an assignee
         if (typeof (this.id) !== 'undefined') {
@@ -1662,5 +1653,9 @@
     Task.prototype.actions.get.implementation = function () {
         const result = getActions(this);
         return result;
+    };
+
+    Task.prototype.logger.put.implementation = function (logType, wait, payload) {
+        return loggerStorage.put.implementation(logType, wait, { ...payload, task_id: this.id });
     };
 })();
